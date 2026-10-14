@@ -1,0 +1,113 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage[margin=1.6cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+ 
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\pinit}{p_{\mathrm{init}}}
+\newcommand{\pdata}{p_{\mathrm{data}}}
+\newcommand{\Id}{I_d}
+\newcommand{\uth}{u_t^{\theta}}
+\newcommand{\utar}{u_t^{\mathrm{target}}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\Normal}{\mathcal{N}}
+\newcommand{\Unif}{\mathrm{Unif}}
+\title{{Generative AI dissertation notes Martin}}
+\author{Martin Altvarg}
+\date{October 2026}
+
+\begin{document}
+\maketitle
+
+\textbf{Setup (Ch.\ 1).} Objects (images, videos, molecules) are vectors $z\in\R^d$. Generation means sampling $z\sim\pdata$, where $\pdata$ is unknown and we only have a dataset $z_1,\dots,z_N\sim\pdata$. Guided generation samples from $\pdata(\cdot\mid y)$.
+ 
+\textbf{Flow models (ODE).}
+\begin{itemize}
+  \item \emph{Vector field} $u:\R^d\times[0,1]\to\R^d$; \emph{trajectory} $X:[0,1]\to\R^d$; ODE: $\frac{\dd}{\dd t}X_t=u_t(X_t)$, $X_0=x_0$.
+  \item \emph{Flow} $\psi_t(x_0)$: where we are at time $t$ when starting at $x_0$. Vector field $\to$ ODE $\to$ flow.
+  \item Solutions exist and are unique if $u$ is $C^1$ with bounded derivative, which holds for neural networks.
+  \item \emph{Euler method:} $X_{t+h}=X_t+h\,u_t(X_t)$, with $h=1/n$. Smaller $h$ is more accurate but less efficient, so find the balance.
+  \item \emph{Neural network} $\uth:\R^d\times[0,1]\to\R^d$ with parameters $\theta$ is a parametrized vector field (the network gives the field, not the flow).
+  \item \emph{Random initial condition:} $X_0\sim\pinit$, usually $\Normal(0,\Id)$, since an ODE is deterministic.
+  \item \textbf{Flow model:} $X_0\sim\pinit$, $\dd X_t=\uth(X_t)\,\dd t$. \textbf{Goal:} $X_1\sim\pdata$, i.e.\ $\pinit\xrightarrow{\text{ODE}}\pdata$.
+\end{itemize}
+ 
+\textbf{Diffusion models (SDE).}
+\begin{itemize}
+  \item \emph{Stochastic process} $(X_t)_{0\le t\le 1}$: each $X_t\in\R^d$ is a random variable, equivalently a random trajectory.
+  \item \emph{Diffusion coefficient} $\sigma:[0,1]\to\R_{\ge0}$, $t\mapsto\sigma_t$: the ``amount of noise''.
+  \item \emph{Brownian motion} $W$ (standard): $W_0=0$, continuous paths, $W_t-W_s\sim\Normal(0,(t-s)\Id)$ for $s<t$, independent increments. Simulation: $W_{t+h}=W_t+\sqrt h\,\epsilon_t$, $\epsilon_t\sim\Normal(0,\Id)$.
+  \item \textbf{SDE:} $\dd X_t=u_t(X_t)\,\dd t+\sigma_t\,\dd W_t$, $X_0=x_0$, where the first term is the ODE part and the second is the stochastic term.
+  \item An ODE is the special case $\sigma_t=0$. SDEs have no flow map because $X_t$ is not determined by $X_0$.
+  \item \emph{Euler--Maruyama:} $X_{t+h}=X_t+h\,u_t(X_t)+\sqrt h\,\sigma_t\,\epsilon_t$, $\epsilon_t\sim\Normal(0,\Id)$.
+  \item \textbf{Diffusion model:} $X_0\sim\pinit$, $\dd X_t=\uth(X_t)\,\dd t+\sigma_t\,\dd W_t$, with goal $X_1\sim\pdata$.
+\end{itemize}
+ 
+\textbf{Summary (SDE generative model).} A diffusion model consists of a neural network and a fixed diffusion coefficient:
+ 
+\smallskip
+\begin{tabular}{@{}r@{\hspace{6pt}}l@{\hspace{14pt}}l@{}}
+  \textbf{Neural network:} & $u^\theta:\R^d\times[0,1]\to\R^d,\ (x,t)\mapsto\uth(x)$ & parameters $\theta$ \\
+  \textbf{Fixed:} & $\sigma_t:[0,1]\to[0,\infty),\ t\mapsto\sigma_t$ & \\[3pt]
+  \textbf{Initialization:} & $X_0\sim\pinit$ & simple distribution, e.g.\ a Gaussian \\
+  \textbf{Simulation:} & $\dd X_t=\uth(X_t)\,\dd t+\sigma_t\,\dd W_t$ & simulate the SDE from 0 to 1 \\
+  \textbf{Goal:} & $X_1\sim\pdata$ & make $X_1$ have distribution $\pdata$ \\
+\end{tabular}
+ 
+\smallskip
+A diffusion model with $\sigma_t=0$ is a flow model.
+ 
+\textbf{Note.} This is only the model definition. We still don't know how to train it.
+
+{\large\textbf{Flow Matching: Ch.\ 3 summary}}
+\hrule\vspace{3pt}
+ 
+\textbf{Idea.} Flow matching is a way of training flow models. Pipeline: probability path $\to$ vector field $\to$ flow matching loss, each in a \emph{conditional} (one data point $z$) and a \emph{marginal} (whole $\pdata$) version.
+ 
+\textbf{Probability paths.}
+\begin{itemize}
+  \item \emph{Conditional path} $p_t(\cdot\mid z)$, $0\le t\le1$, $z\in\R^d$ a data point: a distribution over $\R^d$ with $p_0(\cdot\mid z)=\pinit$ and $p_1(\cdot\mid z)=\delta_z$ ($\delta_z$ always returns $z$). It interpolates between noise and a single data point. This is a \textbf{design choice}; other paths are possible.
+  \item \emph{Marginal path} $p_t$: sample $z\sim\pdata$, then $x\sim p_t(\cdot\mid z)$, so $x\sim p_t$ (a data point made noisy, a new distribution of noisy data). Density $p_t(x)=\int p_t(x\mid z)\,\pdata(z)\,\dd z$ is intractable, but sampling is easy. It satisfies $p_0=\pinit$ and $p_1=\pdata$.
+  \item $p_t$ is something we \textbf{define}, not something we discover. $X_t\sim p_t$ is a wish, and the theorem below makes it true.
+  \item \emph{Gaussian example:} $p_t(\cdot\mid z)=\Normal(\alpha_t z,\beta_t^2\Id)$ with $\alpha_0=\beta_1=0$, $\alpha_1=\beta_0=1$. Sampling: $x=\alpha_t z+\beta_t\epsilon$, $\epsilon\sim\Normal(0,\Id)$.
+\end{itemize}
+ 
+\textbf{Vector fields.}
+\begin{itemize}
+  \item \emph{Conditional field} $\utar(x\mid z)\in\R^d$: if $X_0\sim\pinit$ and $\frac{\dd}{\dd t}X_t=\utar(X_t\mid z)$ then $X_t\sim p_t(\cdot\mid z)$. It depends on $z$ and just collapses noise onto the point $z$, so on its own it is not useful. Gaussian case: $\utar(x\mid z)=\big(\dot\alpha_t-\tfrac{\dot\beta_t}{\beta_t}\alpha_t\big)z+\tfrac{\dot\beta_t}{\beta_t}x$, from the flow $\psi_t(x\mid z)=\alpha_t z+\beta_t x$.
+  \item \emph{Marginal field:}
+  \[
+    \utar(x)=\int \utar(x\mid z)\,\frac{p_t(x\mid z)\,\pdata(z)}{p_t(x)}\,\dd z .
+  \]
+  Bayes: the fraction is the posterior (belief that $x$ came from $z$). So $\utar(x)$ is the average of the directions to each possible $z$, weighted by that belief.
+\end{itemize}
+ 
+\begin{tabular}{@{}l l l l@{}}
+  & \textbf{Notation} & \textbf{Key property} & \textbf{Gaussian example} \\
+  Cond.\ path & $p_t(\cdot\mid z)$ & interpolates $\pinit$ and the point $z$ & $\Normal(\alpha_t z,\beta_t^2\Id)$ \\
+  Cond.\ field & $\utar(x\mid z)$ & ODE gives $X_t\sim p_t(\cdot\mid z)$ & formula above \\
+  Marg.\ path & $p_t$ & interpolates $\pinit$ and $\pdata$ & $\int p_t(x\mid z)\pdata(z)\dd z$ \\
+  Marg.\ field & $\utar(x)$ & ODE gives $X_t\sim p_t$ & posterior-weighted average \\
+\end{tabular}
+ 
+\textbf{Theorem (Marginalization trick).} If $X_0\sim\pinit$ (usually Gaussian) and $\dd X_t=\utar(X_t)\,\dd t$, then $X_t\sim p_t$ for all $t$, in particular $X_1\sim\pdata$.
+\begin{itemize}
+  \item \emph{Proof idea:} the \textbf{continuity equation} $\partial_t p_t=-\mathrm{div}(p_t u_t)$ holds iff the ODE follows $p_t$ (inflow of probability mass). It holds for each $p_t(\cdot\mid z)$, so integrating over $\pdata(z)$ and multiplying and dividing by $p_t(x)$ shows it holds for $\utar(x)$.
+  \item \emph{Meaning of $X_1\sim\pdata$:} we don't know $\pdata$, only a dataset $z_1,\dots,z_N$. The generated $X_1$ is a \emph{new} point that looks like a draw from $\pdata$, not a copy of a dataset point.
+  \item The path and fields above were chosen so that this trick works.
+\end{itemize}
+ 
+\textbf{Learning the marginal field.} Neural network $\uth(x)$ with goal $\uth\approx\utar$.
+\begin{itemize}
+  \item \emph{Flow matching loss:}
+  $\mathcal L_{\mathrm{FM}}(\theta)=\E_{t\sim\Unif,\,z\sim\pdata,\,x\sim p_t(\cdot\mid z)}\big[\|\uth(x)-\utar(x)\|^2\big]$. Not tractable, but its minimizer is $\utar$.
+  \item \emph{Conditional FM loss} (tractable):
+  $\mathcal L_{\mathrm{CFM}}(\theta)=\E_{t\sim\Unif,\,z\sim\pdata,\,x\sim p_t(\cdot\mid z)}\big[\|\uth(x)-\utar(x\mid z)\|^2\big]$.
+  \item \textbf{Theorem:} $\mathcal L_{\mathrm{FM}}(\theta)=\mathcal L_{\mathrm{CFM}}(\theta)+C$ with $C$ independent of $\theta$, so $\nabla_\theta\mathcal L_{\mathrm{FM}}=\nabla_\theta\mathcal L_{\mathrm{CFM}}$. Minimizing $\mathcal L_{\mathrm{CFM}}$ (SGD) gives $u_t^{\theta^*}=\utar$ (for an infinitely expressive network). Regressing on the conditional field implicitly regresses on the marginal one. Key proof step: $\E_{x\sim p_t}[\uth(x)^\top\utar(x)]=\E_{z,\,x\sim p_t(\cdot\mid z)}[\uth(x)^\top\utar(x\mid z)]$.
+  \item Training is \emph{simulation-free} (no ODE is simulated) and is a plain regression. After training, sample via $\dd X_t=\uth(X_t)\,\dd t$, $X_0\sim\pinit$ (Algorithm 1).
+\end{itemize}
+\end{document}
