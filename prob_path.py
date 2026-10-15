@@ -25,7 +25,7 @@ def sample_marginal_path(t, n, rng):
 if __name__ == "__main__":
     rng = np.random.default_rng(0)
     times = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-    n = 100_000
+    n = 200_000
 
     fig, axes = plt.subplots(1, 6, figsize=(18, 3))
     for ax, t in zip(axes, times):
